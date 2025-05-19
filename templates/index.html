@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Call Quality Analyzer</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
+      padding: 0;
+      background-color: #f9fafb;
+      color: #333;
+      font-size: 14px;
+    }
+    .header {
+      background-color: #1f2937;
+      color: white;
+      padding: 15px 30px;
+      font-size: 20px;
+    }
+    .form-box {
+      margin: 20px 30px;
+      text-align: center;
+    }
+    .form-box input[type="file"] {
+      padding: 6px;
+      font-size: 14px;
+    }
+    .form-box input[type="submit"] {
+      background-color: #2563eb;
+      color: white;
+      padding: 6px 16px;
+      border: none;
+      border-radius: 4px;
+      font-size: 14px;
+      cursor: pointer;
+      margin-left: 10px;
+    }
+    .audio-preview {
+      margin-top: 10px;
+      padding: 0 30px;
+    }
+    .container {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      padding: 0 30px 30px 30px;
+    }
+    .left-panel, .right-panel {
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+    }
+    .transcript-section {
+      max-height: 550px;
+      overflow-y: auto;
+      background-color: #f1f5f9;
+      border-radius: 8px;
+      padding: 10px;
+    }
+    .transcript-block {
+      background: #ffffff;
+      border-radius: 6px;
+      padding: 8px 10px;
+      margin: 8px 0;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    }
+    .transcript-block strong {
+      color: #2563eb;
+    }
+    .score-cards {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-top: 15px;
+    }
+    .score-card {
+      background-color: #f9fafb;
+      border-radius: 6px;
+      padding: 12px;
+      font-weight: 500;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+      border-left: 5px solid #94a3b8;
+    }
+    .score-card .category {
+      font-size: 14px;
+      font-weight: bold;
+      color: #1f2937;
+      cursor: pointer;
+    }
+    .score-card .percent {
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .score-card .fraction {
+      font-size: 13px;
+      color: #475569;
+    }
+    .missed-details {
+      display: none;
+      margin-top: 8px;
+      font-size: 12px;
+      color: #991b1b;
+    }
+    .summary-box {
+      background: #fff7ed;
+      border-left: 5px solid #f97316;
+      margin: 20px 30px;
+      padding: 10px 15px;
+      border-radius: 6px;
+      font-size: 13px;
+    }
+    .summary-box strong {
+      font-size: 14px;
+    }
+    .loader {
+      border: 6px solid #f3f3f3;
+      border-top: 6px solid #2563eb;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+      margin: 20px auto;
+      display: none;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+  <script>
+    function showLoader() {
+      document.getElementById('loader').style.display = 'block';
+    }
+    function toggleMissed(id) {
+      const el = document.getElementById(id);
+      el.style.display = el.style.display === 'none' ? 'block' : 'none';
+    }
+  </script>
+</head>
+<body>
+  <div class="header">Call Quality Analyzer</div>
+
+  <div class="form-box">
+    <form method="post" enctype="multipart/form-data" onsubmit="showLoader()">
+      <input type="file" name="audio" accept="audio/*" required>
+      <input type="submit" value="Upload and Analyze">
+    </form>
+    <div id="loader" class="loader"></div>
+  </div>
+
+  {% if audio_path %}
+    <div class="audio-preview">
+      <h4>Audio Preview</h4>
+      <audio controls style="width: 100%;">
+        <source src="{{ url_for('static', filename=audio_path) }}" type="audio/mpeg">
+        Your browser does not support the audio element.
+      </audio>
+    </div>
+  {% endif %}
+
+  {% if summary_text %}
+    <div class="summary-box">
+      <strong>Call Summary:</strong>
+      <p style="margin-top: 6px;">{{ summary_text }}</p>
+    </div>
+  {% endif %}
+
+  <div class="container">
+    <div class="left-panel">
+      <h3>Transcript</h3>
+      <div class="transcript-section">
+        {% for block in transcript_blocks %}
+          <div class="transcript-block">
+            <strong>{{ block.speaker }} [{{ block.start }}s]:</strong> {{ block.text }}
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="right-panel">
+      <h3>Score Breakdown</h3>
+      <div class="score-box" style="text-align:right; margin-bottom: 10px;">
+        <strong>Total:</strong> {{ overall[0] }} / {{ overall[1] }}
+      </div>
+      <div class="score-cards">
+        {% for category, (score, total) in scores.items() %}
+          {% set percent = ((score / total) * 100) | round(0, 'floor') %}
+          {% set color = 'green' if percent >= 80 else 'orange' if percent >= 50 else 'red' %}
+          <div class="score-card" style="border-left: 5px solid {{ color }};">
+            <div class="category" onclick="toggleMissed('missed_{{ loop.index }}')">
+              {{ category }}
+            </div>
+            <div class="percent" style="color: {{ color }};">{{ percent }}%</div>
+            <div class="fraction">({{ score|int }}/{{ total|int }})</div>
+
+            {% if missed_checkpoints[category] %}
+              <div id="missed_{{ loop.index }}" class="missed-details">
+                <strong>Missed:</strong>
+                <ul style="margin-top: 5px; padding-left: 18px;">
+                  {% for item in missed_checkpoints[category] %}
+                    <li>{{ item }}</li>
+                  {% endfor %}
+                </ul>
+              </div>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,6 @@
+flask
+whisper
+openai-whisper
+gunicorn
+ffmpeg-python
+python-dotenv
