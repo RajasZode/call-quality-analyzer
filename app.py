@@ -12,7 +12,7 @@ app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 # Load Whisper model
-whisper_model = whisper.load_model("small")
+whisper_model = whisper.load_model("tiny")
 load_dotenv()
 
 # Dummy speaker tagging (since diarization fails on Render Free)
