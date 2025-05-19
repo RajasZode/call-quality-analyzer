@@ -6,10 +6,8 @@ import time
 from score_transcript import score_transcript, scoring_criteria
 from dotenv import load_dotenv
 import subprocess
-from pyannote.audio import Pipeline
 
 UPLOAD_FOLDER = "static/uploads"
-
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
@@ -17,21 +15,15 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 whisper_model = whisper.load_model("small")
 load_dotenv()
 
-# Assign speaker tags more accurately based on midpoint overlap
-def assign_tagged_transcript(whisper_segments, diarization):
+# Dummy speaker tagging (since diarization fails on Render Free)
+def assign_tagged_transcript(segments):
     results = []
-    for segment in whisper_segments:
-        start, end, text = segment["start"], segment["end"], segment["text"]
-        midpoint = (start + end) / 2
-        speaker = "Unknown"
-        for turn, _, label in diarization.itertracks(yield_label=True):
-            if turn.start <= midpoint <= turn.end:
-                speaker = label
-                break
+    for idx, segment in enumerate(segments):
+        speaker = "Speaker_01" if idx % 2 == 0 else "Speaker_02"
         results.append({
             "speaker": speaker,
-            "start": round(start),
-            "text": text.strip(),
+            "start": round(segment["start"]),
+            "text": segment["text"].strip(),
             "side": "left"
         })
     return results
@@ -70,28 +62,23 @@ def index():
             converted_path = os.path.join(app.config['UPLOAD_FOLDER'], converted_filename)
             subprocess.run(["ffmpeg", "-y", "-i", original_path, "-ac", "1", "-ar", "16000", converted_path])
 
-            # Diarization
-            pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-3.1", use_auth_token=os.getenv("HUGGINGFACE_TOKEN"))
-            diarization = pipeline(converted_path)
-
-            # Transcription
+            # Transcription (no diarization)
             whisper_result = whisper_model.transcribe(converted_path, language="en", fp16=False)
-            whisper_segments = whisper_result.get("segments", [])
+            segments = whisper_result.get("segments", [])
 
-            # Tag speakers
-            transcript_blocks = assign_tagged_transcript(whisper_segments, diarization)
+            # Assign dummy speakers
+            transcript_blocks = assign_tagged_transcript(segments)
 
-            # Combine all transcript text
-            full_transcript = " ".join([block["text"] for block in transcript_blocks])
+            # Combine transcript text
+            full_transcript = " ".join([b["text"] for b in transcript_blocks])
 
-            # Score
+            # Scoring
             scored_output = score_transcript(full_transcript, scoring_criteria)
             scores = {k: (v["score"], v["max_score"]) for k, v in scored_output.items()}
             missed_checkpoints = {k: v["missed"] for k, v in scored_output.items()}
             total = sum(v["score"] for v in scored_output.values())
             max_total = sum(v["max_score"] for v in scored_output.values())
             overall_score = (total, max_total)
-
             summary_text = generate_summary(scores)
             audio_preview_path = f'uploads/{converted_filename}'
 
@@ -107,4 +94,5 @@ def index():
 
 if __name__ == '__main__':
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-    app.run(debug=True)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
