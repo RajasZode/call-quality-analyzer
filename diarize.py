@@ -2,9 +2,7 @@ from pyannote.audio import Pipeline
 import os
 
 # Use token from environment variable
-pipeline = Pipeline.from_pretrained(
-    "pyannote/speaker-diarization-3.1", use_auth_token=os.getenv("HUGGINGFACE_TOKEN")
-)
+pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization@2023.07", use_auth_token=os.getenv("HUGGINGFACE_TOKEN"))
 
 # Path to your test audio file
 AUDIO_FILE = "clean_call.wav"

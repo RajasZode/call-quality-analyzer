@@ -15,7 +15,7 @@ whisper_model = whisper.load_model("tiny")
 load_dotenv()
 
 # Real speaker tagging using pyannote
-pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-3.1", use_auth_token=os.getenv("HUGGINGFACE_TOKEN"))
+pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization@2023.07", use_auth_token=os.getenv("HUGGINGFACE_TOKEN"))
 
 def assign_tagged_transcript(segments, diarization):
     results = []
