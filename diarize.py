@@ -3,8 +3,13 @@ import os
 from dotenv import load_dotenv
 
 load_dotenv()
+
+try:
 # Use token from environment variable
-pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization@2023.07", use_auth_token=os.getenv("HUGGINGFACE_TOKEN"))
+    pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization@2023.07", use_auth_token=os.getenv("HUGGINGFACE_TOKEN"))
+except Exception as e:
+    import traceback
+    traceback.print_exc()
 
 # Path to your test audio file
 AUDIO_FILE = "clean_call.wav"
