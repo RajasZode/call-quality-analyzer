@@ -1,39 +1,67 @@
-# score_transcript.py
-
 scoring_criteria = {
     "Call Opening": [
         {
-            "description": "Agent greeted with full name, company name, and purpose",
-            "keywords": ["this is", "my name is", "calling from", "insurance", "purpose of call", "bajaj", "welcome call"],
-            "weight": 5,
+            "description": "Greeting must start with Good Morning / Afternoon / Evening (not Hi/Hello)",
+            "keywords": ["Good morning", "good afternoon", "good evening"],
+            "weight": 1,
+            "critical": True,
+            "must_start": True,
+            "negative_keywords": ["hi", "hello"]
+        },
+        {
+            "description": "Agent to mention his/her name and company name",
+            "keywords": ["my name is", "this is", "calling from", "bajaj", "insurance"],
+            "weight": 1,
             "critical": True
         },
         {
-            "description": "Informed that this is a recorded call for quality/training",
-            "keywords": ["this call is recorded", "quality", "training", "future reference", "recorded line", "record ho rahi hai"],
-            "weight": 2,
+            "description": "Agent to ask for customer's name",
+            "keywords": ["your name", "may I know your name", "confirm your name", "Am I talking to", "Am I speaking with"],
+            "weight": 1,
+            "critical": False
+        },
+        {
+            "description": "Agent to explain the purpose of the call",
+            "keywords": ["purpose of call", "regarding", "calling you for", "welcome call", "insurance", "health", "policy"],
+            "weight": 1,
             "critical": True
+        },
+        {
+            "description": "Inform about call recording & took language confirmation at beginning",
+            "keywords": ["this call is recorded", "for quality", "for training", "recorded line", "record ho rahi hai", "language", "english", "hindi"],
+            "weight": 1,
+            "critical": True,
+            "must_be_in_opening": True
         }
     ],
 
-    "Customer Information Gathering": [
+    "Information Gathering": [
         {
-            "description": "Asked about members covered, DOB, family members, city, height, weight, nominee, email, alternate contact, address",
+            "description": "Ask about members covered, DOB, family members, city, height, weight, nominee, email, alternate contact, address",
             "keywords": ["how many members", "dob", "date of birth", "family members", "spouse", "city", "height", "weight", "nominee", "email", "alternate number", "address", "kitne member", "janm", "pati", "bachche", "sheher", "vajan", "imeel", "dusra number", "ghar ka pata"],
             "weight": 5,
             "critical": True
         },
         {
-            "description": "Asked PD/underwriting questions",
-            "keywords": ["any medical condition", "underwriting", "health questions", "diabetes", "bp", "surgery", "asthma", "swastya", "bimari"],
+            "description": "Agent to ask PED/Underwriting questions",
+            "keywords": [
+                "pre existing disease", "diabetes", "high blood pressure", "bp",
+                "thyroid", "medical condition", "consume cigarette", "alcohol",
+                "smoke", "drink", "critical illness", "hospitalized",
+                "hospitalization", "accident", "surgery", "asthma"
+            ],
             "weight": 5,
-            "critical": True
+            "critical": True,
+            "scoring_type": "per_keyword",
+            "max_score": 5,
+            "min_required": 3
         },
         {
             "description": "Portability case info: previous insurer, expiry date, claim history",
             "keywords": ["previous insurance", "old policy", "expiry date", "claim history", "purani policy", "samapti tithi", "daava"],
             "weight": 3,
-            "critical": True
+            "critical": True,
+            "condition_keywords": ["i want to port", "port my policy", "switch policy", "transfer policy", "portability"]
         }
     ],
 
@@ -143,28 +171,86 @@ scoring_criteria = {
     ]
 }
 
-# Scoring logic
+def score_transcript(transcript_input, criteria=scoring_criteria):
+    if isinstance(transcript_input, str):
+        transcript_text = transcript_input.lower()
+    else:
+        transcript_text = " ".join([
+            segment['text'].lower()
+            for segment in transcript_input
+            if segment.get('speaker', '').upper() in ["SPEAKER_01", "UNKNOWN"]
+        ])
 
-def score_transcript(transcript, criteria):
-    transcript_lower = transcript.lower()
-    scored_output = {}
+    results = {}
 
-    for section, items in criteria.items():
-        score = 0
-        max_score = sum(item["weight"] for item in items)
+    for section, criteria_list in criteria.items():
+        section_score = 0
+        section_total = 0
         missed = []
+        achieved = []
+        evaluated_count = 0
 
-        for item in items:
-            matched = any(keyword.lower() in transcript_lower for keyword in item["keywords"])
-            if matched:
-                score += item["weight"]
+        for c in criteria_list:
+            score = 0
+            if "condition_keywords" in c and not any(k in transcript_text for k in c["condition_keywords"]):
+                continue
+
+            section_total += c['weight']
+            evaluated_count += 1
+
+            if c.get("scoring_type") == "per_keyword":
+                matched_keywords = set()
+                for kw in c["keywords"]:
+                    if kw in transcript_text:
+                        matched_keywords.add(kw)
+                score = min(len(matched_keywords), c.get("max_score", c["weight"]))
+                if len(matched_keywords) < c.get("min_required", 1):
+                    score = 0
+                if score == 0:
+                    missed.append(f"{c['description']} (0/{c['weight']})")
+                else:
+                    achieved.append(f"{c['description']} ({score}/{c['weight']})")
+
+            elif c.get("must_start"):
+                first_sentence = ""
+                if isinstance(transcript_input, list):
+                    for line in transcript_input:
+                        if line.get("speaker", "").upper() in ["SPEAKER_01", "UNKNOWN"]:
+                            first_sentence = line.get("text", "").lower()
+                            break
+                first_20_words = " ".join(first_sentence.split()[:20])
+                if any(kw.lower() in first_20_words for kw in c["keywords"]) and not any(bad.lower() in first_20_words for bad in c.get("negative_keywords", [])):
+                    score = c["weight"]
+                    achieved.append(f"{c['description']} ({score}/{c['weight']})")
+                else:
+                    missed.append(f"{c['description']} (0/{c['weight']})")
+
+            elif c.get("must_be_in_opening"):
+                first_50_words = " ".join(transcript_text.split()[:50])
+                if any(kw in first_50_words for kw in c["keywords"]):
+                    score = c["weight"]
+                    achieved.append(f"{c['description']} ({score}/{c['weight']})")
+                else:
+                    missed.append(f"{c['description']} (0/{c['weight']})")
+
             else:
-                missed.append(item["description"])
+                if any(kw in transcript_text for kw in c["keywords"]):
+                    score = c["weight"]
+                    achieved.append(f"{c['description']} ({score}/{c['weight']})")
+                else:
+                    missed.append(f"{c['description']} (0/{c['weight']})")
 
-        scored_output[section] = {
-            "score": score,
-            "max_score": max_score,
-            "missed": missed
+            section_score += score
+
+        percent = round((section_score / section_total) * 100, 1) if section_total > 0 else 0
+        results[section] = {
+            "score": section_score,
+            "total": section_total,
+            "percent": percent,
+            "missed": missed,
+            "missed_count": len(missed),
+            "achieved_count": evaluated_count - len(missed),
+            "achieved": achieved
         }
 
-    return scored_output
+    return results

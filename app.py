@@ -1,11 +1,10 @@
-# app.py
 from flask import Flask, render_template, request
 import os
 import whisper
-import time
+import subprocess
 from score_transcript import score_transcript, scoring_criteria
 from dotenv import load_dotenv
-import subprocess
+from pyannote.audio import Pipeline
 
 UPLOAD_FOLDER = "static/uploads"
 app = Flask(__name__)
@@ -15,40 +14,59 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 whisper_model = whisper.load_model("tiny")
 load_dotenv()
 
-# Dummy speaker tagging (since diarization fails on Render Free)
-def assign_tagged_transcript(segments):
+# Real speaker tagging using pyannote
+pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-3.1", use_auth_token=os.getenv("HUGGINGFACE_TOKEN"))
+
+def assign_tagged_transcript(segments, diarization):
     results = []
-    for idx, segment in enumerate(segments):
-        speaker = "Speaker_01" if idx % 2 == 0 else "Speaker_02"
+    for segment in segments:
+        start, end, text = segment["start"], segment["end"], segment["text"]
+        midpoint = (start + end) / 2
+        speaker = "Unknown"
+        for turn, _, label in diarization.itertracks(yield_label=True):
+            if turn.start <= midpoint <= turn.end:
+                speaker = label
+                break
         results.append({
             "speaker": speaker,
-            "start": round(segment["start"]),
-            "text": segment["text"].strip(),
+            "start": round(start),
+            "text": text.strip(),
             "side": "left"
         })
     return results
 
-# Score summary sentence
-def generate_summary(scores):
+# Generate summary text and call_summary dictionary
+def generate_summary_and_call_summary(scores):
     summary_lines = []
+    call_summary = {}
     for category, (score, total) in scores.items():
         percent = (score / total) * 100 if total > 0 else 0
         if percent >= 80:
-            summary_lines.append(f"{category} was handled very well.")
+            text = f"{category} was handled very well."
         elif percent >= 40:
-            summary_lines.append(f"{category} was average and can be improved.")
+            text = f"{category} was average and can be improved."
         else:
-            summary_lines.append(f"{category} was poorly handled and needs attention.")
-    return " ".join(summary_lines)
+            text = f"{category} was poorly handled and needs attention."
+        summary_lines.append(text)
+        call_summary[category] = text
+    return " ".join(summary_lines), call_summary
 
-@app.route('/', methods=['GET', 'POST'])
-def index():
+# Landing page
+@app.route('/')
+def landing():
+    return render_template('landing.html')
+
+# Upload and analyze route
+@app.route('/upload', methods=['GET', 'POST'])
+def upload():
     transcript_blocks = []
     scores = {}
     overall_score = (0, 0)
     audio_preview_path = None
     summary_text = ""
+    call_summary = {}
     missed_checkpoints = {}
+    achieved_checkpoints = {}
 
     if request.method == 'POST':
         audio_file = request.files['audio']
@@ -60,26 +78,30 @@ def index():
             # Convert to 16kHz mono WAV
             converted_filename = "clean_test.wav"
             converted_path = os.path.join(app.config['UPLOAD_FOLDER'], converted_filename)
-            subprocess.run(["ffmpeg", "-y", "-i", original_path, "-ac", "1", "-ar", "16000", converted_path])
+            subprocess.run([
+                "ffmpeg", "-y", "-i", original_path,
+                "-ac", "1", "-ar", "16000", converted_path
+            ])
 
-            # Transcription (no diarization)
+            # Diarization
+            diarization = pipeline(converted_path)
+
+            # Transcribe
             whisper_result = whisper_model.transcribe(converted_path, language="en", fp16=False)
             segments = whisper_result.get("segments", [])
 
-            # Assign dummy speakers
-            transcript_blocks = assign_tagged_transcript(segments)
-
-            # Combine transcript text
+            transcript_blocks = assign_tagged_transcript(segments, diarization)
             full_transcript = " ".join([b["text"] for b in transcript_blocks])
 
             # Scoring
-            scored_output = score_transcript(full_transcript, scoring_criteria)
-            scores = {k: (v["score"], v["max_score"]) for k, v in scored_output.items()}
+            scored_output = score_transcript(transcript_blocks, scoring_criteria)
+            scores = {k: (v["score"], v["total"]) for k, v in scored_output.items()}
             missed_checkpoints = {k: v["missed"] for k, v in scored_output.items()}
+            achieved_checkpoints = {k: v["achieved"] for k, v in scored_output.items()}
             total = sum(v["score"] for v in scored_output.values())
-            max_total = sum(v["max_score"] for v in scored_output.values())
+            max_total = sum(v["total"] for v in scored_output.values())
             overall_score = (total, max_total)
-            summary_text = generate_summary(scores)
+            summary_text, call_summary = generate_summary_and_call_summary(scores)
             audio_preview_path = f'uploads/{converted_filename}'
 
     return render_template(
@@ -89,10 +111,15 @@ def index():
         overall=overall_score,
         audio_path=audio_preview_path,
         summary_text=summary_text,
-        missed_checkpoints=missed_checkpoints
+        call_summary=call_summary,
+        missed_checkpoints=missed_checkpoints,
+        achieved_checkpoints=achieved_checkpoints
     )
+
+@app.route('/dashboard')
+def dashboard():
+    return render_template('dashboard.html')
 
 if __name__ == '__main__':
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(debug=True, port=5050)
