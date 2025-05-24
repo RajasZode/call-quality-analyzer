@@ -1,6 +1,8 @@
 from pyannote.audio import Pipeline
 import os
+from dotenv import load_dotenv
 
+load_dotenv()
 # Use token from environment variable
 pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization@2023.07", use_auth_token=os.getenv("HUGGINGFACE_TOKEN"))
 
