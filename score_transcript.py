@@ -50,18 +50,11 @@ scoring_criteria = {
                 "smoke", "drink", "critical illness", "hospitalized",
                 "hospitalization", "accident", "surgery", "asthma"
             ],
-            "weight": 5,
+            "weight": 8,
             "critical": True,
             "scoring_type": "per_keyword",
-            "max_score": 5,
+            "max_score": 8,
             "min_required": 3
-        },
-        {
-            "description": "Portability case info: previous insurer, expiry date, claim history",
-            "keywords": ["previous insurance", "old policy", "expiry date", "claim history", "purani policy", "samapti tithi", "daava"],
-            "weight": 3,
-            "critical": True,
-            "condition_keywords": ["i want to port", "port my policy", "switch policy", "transfer policy", "portability"]
         }
     ],
 
@@ -107,37 +100,50 @@ scoring_criteria = {
     "Communication Skill": [
         {
             "description": "Courtesy & personalization (golden words, name used 2x, rapport)",
-            "keywords": ["thank you", "appreciate", "your name", "mr.", "mrs.", "miss", "sir", "ma'am"],
+            "keywords": ["thank you", "appreciate", "your name", "mr.", "mrs.", "miss", "sir", "ma'am", "shukriya", "dhanyavaad"],
             "weight": 3,
             "critical": False
         },
         {
-            "description": "Fluent speech, right speed, confident tone, no fumbling",
-            "keywords": ["clear", "slow down", "voice modulation", "tone", "confidence", "energy", "clarity"],
+            "description": "Fluent speech, no fumble, confident tone",
+            "keywords": ["no fumble", "clear voice", "confident tone", "uhh", "umm", "matlab", "hmmm"],
             "weight": 3,
-            "critical": False
+            "critical": True
         },
         {
-            "description": "Engaged customer (2-way communication, active listening)",
-            "keywords": ["any questions", "do you have", "kya samjha", "aap bataye", "sun raha hoon"],
+            "description": "Engaged customer (active listening)",
+            "keywords": [
+                "I understand", "is that correct", "let me repeat", "aap keh rahe ho", "samjha main", 
+                "theek hai", "kya sahi hai", "main confirm kar leta hoon"
+            ],
             "weight": 2,
-            "critical": False
+            "critical": True
         },
         {
-            "description": "Empathy & acknowledgement",
-            "keywords": ["i understand", "i'm sorry", "i hear you", "samajhta hoon"],
+            "description": "Empathy & acknowledgment",
+            "keywords": [
+                "sorry to hear", "I can understand", "thank you for your patience",
+                "mujhe khed hai", "main samajh sakta hoon", "aapka dhanyavaad", 
+                "mujhe afsos hai", "patience ke liye dhanyavaad"
+            ],
             "weight": 1,
-            "critical": False
+            "critical": True
         },
         {
             "description": "Hold/unhold procedure followed",
-            "keywords": ["may I place", "thank you for holding", "on hold", "dhanyavaad hold"],
+            "keywords": [
+                "may I place you on hold", "thank you for holding", "I'm back on line",
+                "aapko hold par", "intezaar kijiye", "hold ke liye dhanyavaad", "wapis aagaya hoon"
+            ],
             "weight": 2,
-            "critical": False
+            "critical": True
         },
         {
-            "description": "No rudeness, no abuse, no argument",
-            "keywords": ["sorry", "no argument", "abuse", "shouting", "badtameezi", "jagda"],
+            "description": "No rudeness or argument",
+            "blacklist": [
+                "what's your problem", "listen to me", "stop wasting my time", "are you deaf",
+                "sun na", "samajh nahi aata", "kitni baar bola", "bewakoof", "tum sun rahe ho ya nahi"
+            ],
             "weight": 3,
             "critical": True
         }
@@ -145,17 +151,14 @@ scoring_criteria = {
 
     "Call Closing": [
         {
-            "description": "Follow-up date & time confirmed",
-            "keywords": ["follow up", "next call", "call back", "schedule", "phir baat"],
-            "weight": 5,
-            "critical": True
-        },
-        {
-            "description": "Cross-sell, referral if sales closed",
-            "keywords": ["any other", "refer", "family member", "aur plan"],
-            "weight": 4,
-            "critical": True
-        },
+    "description": "Follow-up date & time confirmed",
+    "keywords": [
+        "follow up", "next call", "call back", "schedule", "phir baat", "wapis call", "when can I call"
+        "connect at", "we will connect", "can I call you", "I can call you", "call you", "let's talk at", "will call you at", "can reach you at"
+    ],
+    "weight": 9,
+    "critical": True
+},
         {
             "description": "Disposition tagging done correctly",
             "keywords": ["disposition", "call status", "updated as"],
@@ -176,10 +179,12 @@ def score_transcript(transcript_input, criteria=scoring_criteria):
         transcript_text = transcript_input.lower()
     else:
         transcript_text = " ".join([
-            segment['text'].lower()
+            segment.get('text', '').lower()
             for segment in transcript_input
-            if segment.get('speaker', '').upper() in ["SPEAKER_01", "UNKNOWN"]
+            if segment.get('speaker', '').upper() in ["SPEAKER_00", "SPEAKER_01", "UNKNOWN"]
         ])
+
+    print("\nFull Transcript for Scoring:\n", transcript_text)
 
     results = {}
 
@@ -192,53 +197,61 @@ def score_transcript(transcript_input, criteria=scoring_criteria):
 
         for c in criteria_list:
             score = 0
+
             if "condition_keywords" in c and not any(k in transcript_text for k in c["condition_keywords"]):
                 continue
 
             section_total += c['weight']
             evaluated_count += 1
 
+            matched_keywords = set()
+            blacklist_hit = False
+
+            # Check blacklist
+            for word in c.get("blacklist", []):
+                if word.lower().strip() in transcript_text:
+                    blacklist_hit = True
+                    break
+
             if c.get("scoring_type") == "per_keyword":
-                matched_keywords = set()
-                for kw in c["keywords"]:
-                    if kw in transcript_text:
+                for kw in c.get("keywords", []):
+                    if kw.lower().strip() in transcript_text:
                         matched_keywords.add(kw)
+
                 score = min(len(matched_keywords), c.get("max_score", c["weight"]))
                 if len(matched_keywords) < c.get("min_required", 1):
                     score = 0
-                if score == 0:
-                    missed.append(f"{c['description']} (0/{c['weight']})")
-                else:
-                    achieved.append(f"{c['description']} ({score}/{c['weight']})")
 
             elif c.get("must_start"):
                 first_sentence = ""
                 if isinstance(transcript_input, list):
                     for line in transcript_input:
-                        if line.get("speaker", "").upper() in ["SPEAKER_01", "UNKNOWN"]:
+                        if line.get("speaker", "").upper() in ["SPEAKER_00", "SPEAKER_01", "UNKNOWN"]:
                             first_sentence = line.get("text", "").lower()
                             break
                 first_20_words = " ".join(first_sentence.split()[:20])
-                if any(kw.lower() in first_20_words for kw in c["keywords"]) and not any(bad.lower() in first_20_words for bad in c.get("negative_keywords", [])):
+                if any(kw.lower() in first_20_words for kw in c.get("keywords", [])) and not any(bad.lower() in first_20_words for bad in c.get("negative_keywords", [])):
                     score = c["weight"]
-                    achieved.append(f"{c['description']} ({score}/{c['weight']})")
-                else:
-                    missed.append(f"{c['description']} (0/{c['weight']})")
 
             elif c.get("must_be_in_opening"):
                 first_50_words = " ".join(transcript_text.split()[:50])
-                if any(kw in first_50_words for kw in c["keywords"]):
+                if any(kw.lower() in first_50_words for kw in c.get("keywords", [])):
                     score = c["weight"]
-                    achieved.append(f"{c['description']} ({score}/{c['weight']})")
-                else:
-                    missed.append(f"{c['description']} (0/{c['weight']})")
 
-            else:
-                if any(kw in transcript_text for kw in c["keywords"]):
+            elif c.get("keywords"):
+                if any(kw.lower().strip() in transcript_text for kw in c["keywords"]):
                     score = c["weight"]
-                    achieved.append(f"{c['description']} ({score}/{c['weight']})")
-                else:
-                    missed.append(f"{c['description']} (0/{c['weight']})")
+
+            # Final scoring condition
+            if blacklist_hit:
+                print(f"[BLOCKED] {c['description']} | Blacklist triggered")
+                score = 0
+                missed.append(f"{c['description']} (0/{c['weight']})")
+            elif score == 0:
+                print(f"[MISS] {c['description']} | Keywords: {c.get('keywords', [])}")
+                missed.append(f"{c['description']} (0/{c['weight']})")
+            else:
+                achieved.append(f"{c['description']} ({score}/{c['weight']})")
 
             section_score += score
 
