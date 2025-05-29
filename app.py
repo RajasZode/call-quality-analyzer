@@ -15,8 +15,9 @@ whisper_model = whisper.load_model("tiny")
 load_dotenv()
 
 try:
-# Real speaker tagging using pyannote
-    pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization@2023.07", use_auth_token=os.getenv("HUGGINGFACE_TOKEN"))
+    # Real speaker tagging using pyannote
+    token = os.getenv("HUGGINGFACE_TOKEN")
+    pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-3.1", use_auth_token=token)
     if pipeline is None:
         raise ValueError(f"Pipeline is Returning None {pipeline}")
 except Exception as e:
@@ -130,3 +131,4 @@ def dashboard():
 if __name__ == '__main__':
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
     app.run(debug=False,host="0.0.0.0",  port=5050)
+
