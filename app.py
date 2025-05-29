@@ -14,6 +14,13 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 whisper_model = whisper.load_model("tiny")
 load_dotenv()
 
+# Load pyannote pipeline with token
+token = os.getenv("HUGGINGFACE_TOKEN")
+pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-3.1", use_auth_token=token)
+
+if pipeline is None:
+    raise ValueError(f"Pipeline is Returning None {pipeline}")
+
 try:
     # Real speaker tagging using pyannote
     token = os.getenv("HUGGINGFACE_TOKEN")
