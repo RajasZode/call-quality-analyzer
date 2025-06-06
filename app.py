@@ -34,32 +34,20 @@ except Exception as e:
 
 def assign_tagged_transcript(segments, diarization):
     results = []
-    
-    # Preload diarization tracks for faster lookup
-    speaker_turns = list(diarization.itertracks(yield_label=True))
-
     for segment in segments:
         start, end, text = segment["start"], segment["end"], segment["text"]
         midpoint = (start + end) / 2
         speaker = "Unknown"
-
-        # Match midpoint to speaker turn
-        for turn, _, label in speaker_turns:
+        for turn, _, label in diarization.itertracks(yield_label=True):
             if turn.start <= midpoint <= turn.end:
                 speaker = label
                 break
-
-        # Skip if duplicate of previous line (optional safety)
-        if results and results[-1]["text"] == text.strip():
-            continue
-
         results.append({
             "speaker": speaker,
             "start": round(start),
             "text": text.strip(),
             "side": "left"
         })
-
     return results
 
 # Generate summary text and call_summary dictionary
@@ -150,4 +138,3 @@ def dashboard():
 if __name__ == '__main__':
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
     app.run(debug=False,host="0.0.0.0",  port=5050)
-
