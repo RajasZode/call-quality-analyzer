@@ -1,4 +1,3 @@
-# Minor update for GitHub sync - testing push from local
 from flask import Flask, render_template, request
 import os
 import whisper
@@ -12,7 +11,7 @@ app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 # Load Whisper model
-whisper_model = whisper.load_model("tiny")
+whisper_model = whisper.load_model("large")
 load_dotenv()
 
 # Load pyannote pipeline with token
